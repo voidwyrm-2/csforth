@@ -1,0 +1,1 @@
+inputn if 999 . else -999 . then cr
