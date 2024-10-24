@@ -59,9 +59,9 @@ class Program
         {
             interpreter.Interpret(content);
         }
-        catch (CSForthException e)
+        catch (ForthException e)
         {
-            Console.WriteLine(e);
+            Console.WriteLine(e.Message);
         }
     }
 }
