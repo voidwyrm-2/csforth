@@ -32,6 +32,9 @@ public static class Common
         return copy;
     }
 
+    internal static bool ToForthBool(this int i) => i != 0;
+    internal static int ToForthInt(this bool b) => b ? -1 : 0;
+
     public class Ref<T>(T value)
     {
         private T value = value;

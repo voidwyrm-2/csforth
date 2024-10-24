@@ -142,15 +142,16 @@ public static class Stdlib
         }, ForthStack.IOTypes.Nop)},
 
         {":", new((i, tokens, words, _, _) => {
-            List<string> fnTokens = [];
             i.Value++;
+
+            List<string> fnTokens = [];
             while (i.Value < tokens.Length && tokens[i.Value] != ";") {
                 if (tokens[i.Value] == ":") throw new CSForthException(": INSIDE :");
                 fnTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
             if (tokens[i.Value] != ";")
-                throw new CSForthException("UNTERMINATED COMMENT");
+                throw new CSForthException("UNTERMINATED WORD DECLARATION");
             else if (fnTokens.Count == 0)
                 throw new CSForthException("NO WORD NAME GIVEN");
 
@@ -183,10 +184,19 @@ public static class Stdlib
         }, ForthStack.IOTypes.Nop)},
 
         {"if", new((i, tokens, _, interpreter, stack) => {
-            List<string> ifTokens = [];
             i.Value++;
-            while (i.Value < tokens.Length && tokens[i.Value] != "else") {
-                if (tokens[i.Value] == ":") throw new CSForthException(": INSIDE if");
+
+            List<string> ifTokens = [];
+            int ifnest = 0;
+            while (i.Value < tokens.Length) {
+                if (tokens[i.Value] == "else") {
+                    if (ifnest == 0) break;
+                    ifnest--;
+                }
+                else if (tokens[i.Value] == ":")
+                    throw new CSForthException(": INSIDE if ... else");
+                else if (tokens[i.Value] == "if")
+                    ifnest++;
                 ifTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
@@ -197,8 +207,16 @@ public static class Stdlib
             i.Value++;
 
             List<string> elseTokens = [];
-            while (i.Value < tokens.Length && tokens[i.Value] != "then") {
-                if (tokens[i.Value] == ":") throw new CSForthException(": INSIDE else");
+            int elsenest = 0;
+            while (i.Value < tokens.Length) {
+                if (tokens[i.Value] == "then") {
+                    if (elsenest == 0) break;
+                    elsenest--;
+                }
+                else if (tokens[i.Value] == ":")
+                    throw new CSForthException(": INSIDE else ... then");
+                else if (tokens[i.Value] == "else")
+                    elsenest++;
                 elseTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
@@ -206,7 +224,7 @@ public static class Stdlib
             if (tokens[i.Value] != "then")
                 throw new CSForthException("UNTERMINATED ELSE");
 
-            if (stack.Pop() != 0)
+            if (stack.Pop().ToForthBool())
                 interpreter.Interpret([.. ifTokens]);
             else
                 interpreter.Interpret([.. elseTokens]);
@@ -214,23 +232,89 @@ public static class Stdlib
             return null;
         }, ForthStack.IOTypes.InputOnly)},
 
+        {"do", new((i, tokens, _, interpreter, stack) => {
+            i.Value++;
+
+            List<string> loopTokens = [];
+            int loopnest = 0;
+            while (i.Value < tokens.Length) {
+                if (tokens[i.Value] == "loop") {
+                    if (loopnest == 0) break;
+                    loopnest--;
+                }
+                if (tokens[i.Value] == ":")
+                    throw new CSForthException(": INSIDE do ... loop");
+                else if (tokens[i.Value] == "do") loopnest++;
+                loopTokens.Add(tokens[i.Value]);
+                i.Value++;
+            }
+            if (tokens[i.Value] != "loop")
+                throw new CSForthException("UNTERMINATED LOOP");
+
+            var loops = stack.Pop();
+            for (int j = 0; j < loops; j++) interpreter.Interpret([.. loopTokens]);
+
+            return null;
+        }, ForthStack.IOTypes.InputOnly)},
+
         {"empty", new((_, _, _, _, stack) => {
-            stack.Push(stack.Empty() ? 1 : 0);
+            stack.Push(stack.Empty().ToForthInt());
             return null;
         }, ForthStack.IOTypes.OutputOnly)},
 
         {"invert", new(["0", "=", "if", "-1", "else", "0", "then"], "n -- !n")},
 
+        {"+", new((_, _, _, _, stack) => {
+            stack.Push(stack.Pop() + stack.Pop());
+            return null;
+        }, "n n -- n + n")},
+
+        {"-", new((_, _, _, _, stack) => {
+            stack.Push(stack.Pop() - stack.Pop());
+            return null;
+        }, "n n -- n - n")},
+
+        {"*", new((_, _, _, _, stack) => {
+            stack.Push(stack.Pop() * stack.Pop());
+            return null;
+        }, "n n -- n * n")},
+
+        {"/", new((_, _, _, _, stack) => {
+            stack.Push(stack.Pop() / stack.Pop());
+            return null;
+        }, "n n -- n / n")},
+
+        {"mod", new((_, _, _, _, stack) => {
+            stack.Push(stack.Pop() % stack.Pop());
+            return null;
+        }, "n n -- n % n")},
+
         {"=", new((_, _, _, _, stack) => {
-            stack.Push(stack.Pop() == stack.Pop() ? ForthStack.True : ForthStack.False);
+            stack.Push((stack.Pop() == stack.Pop()).ToForthInt());
             return null;
         }, "n n -- n == n")},
 
         {"!=", new(["=", "invert"], "n n -- n != n")},
 
-        {"cr", new(["10", "emit"], ForthStack.IOTypes.Nop)},
+        {">", new((_, _, _, _, stack) => {
+            stack.Push((stack.Pop() > stack.Pop()).ToForthInt());
+            return null;
+        }, "n n -- n > n")},
 
-        {"nop", new([])},
+        {"<", new((_, _, _, _, stack) => {
+            stack.Push(stack.Pop() < stack.Pop() ? ForthStack.True : ForthStack.False);
+            return null;
+        }, "n n -- n < n")},
+
+        {"and", new((_, _, _, _, stack) => {
+            stack.Push((stack.Pop().ToForthBool() && stack.Pop().ToForthBool()).ToForthInt());
+            return null;
+        }, "n n -- n && n")},
+
+        {"or", new((_, _, _, _, stack) => {
+            stack.Push((stack.Pop().ToForthBool() || stack.Pop().ToForthBool()).ToForthInt());
+            return null;
+        }, "n n -- n || n")},
 
         {"input", new((_, _, _, _, stack) => {
             while (true) {
@@ -276,7 +360,15 @@ public static class Stdlib
                 break;
             }
             return null;
-        })}
+        })},
+
+        {"cr", new(["10", "emit"], ForthStack.IOTypes.Nop)},
+
+        {"nop", new([])},
+
+        {">=", new(["<", "negate"], "n n -- n >= n")},
+
+        {"<=", new([">", "negate"], "n n -- n <= n")},
 
         //{"bell", new(["7", "emit"], ForthStack.IOTypes.InputOnly)},
     };
