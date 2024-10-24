@@ -98,7 +98,7 @@ public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? wor
                     }
                     catch (ForthException e)
                     {
-                        throw new ForthException($"{e.Message}\n>>>{tokens[r.Value]}<<<");
+                        throw new ForthException($"{e.Message}\n>>>{tokens[r.Value >= tokens.Length ? tokens.Length - 1 : r.Value]}<<<");
                     }
                     if (r.Set) i = r.Value == -1 ? tokens.Length : r.Value;
                 }
@@ -153,9 +153,13 @@ public static class Stdlib
         {"(", new((ctx, words, _, _) => {
             var i = ctx.i;
             var tokens = ctx.tokens;
+            var start = i.Value;
             while (i.Value < tokens.Length && tokens[i.Value] != ")") i.Value++;
 
-            if (tokens[i.Value] != ")") throw new ForthException("UNTERMINATED COMMENT");
+            if (tokens[i.Value] != ")") {
+                i.Value = start;
+                throw new ForthException("UNTERMINATED COMMENT");
+            }
 
             return null;
         }, ForthStack.IOTypes.Nop)},
@@ -163,6 +167,7 @@ public static class Stdlib
         {":", new((ctx, words, _, _) => {
             var i = ctx.i;
             var tokens = ctx.tokens;
+            var start = i.Value;
             i.Value++;
 
             List<string> fnTokens = [];
@@ -171,8 +176,10 @@ public static class Stdlib
                 fnTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
-            if (tokens[i.Value] != ";")
+            if (tokens[i.Value] != ";") {
+                i.Value = start;
                 throw new ForthException("UNTERMINATED WORD DECLARATION");
+            }
             else if (fnTokens.Count == 0)
                 throw new ForthException("NO WORD NAME GIVEN");
 
@@ -188,7 +195,10 @@ public static class Stdlib
                     j++;
                 }
 
-                if (fnTokens[j] != ")") throw new ForthException("UNTERMINATED COMMENT");
+                if (i.Value >= tokens.Length || fnTokens[j] != ")") {
+                    i.Value = start;
+                    throw new ForthException("UNTERMINATED COMMENT");
+                }
                 fnTokens = fnTokens[(j + 1)..];
                 foreach (string token in effectTokens) {
                     effect += " " + token;
@@ -207,6 +217,7 @@ public static class Stdlib
         {"if", new((ctx, _, interpreter, stack) => {
             var i = ctx.i;
             var tokens = ctx.tokens;
+            var start = i.Value;
             i.Value++;
 
             List<string> ifTokens = [];
@@ -224,8 +235,10 @@ public static class Stdlib
                 i.Value++;
             }
 
-            if (tokens[i.Value] != "else")
+            if (i.Value >= tokens.Length || tokens[i.Value] != "else") {
+                i.Value = start;
                 throw new ForthException("UNTERMINATED IF");
+            }
 
             i.Value++;
 
@@ -244,8 +257,10 @@ public static class Stdlib
                 i.Value++;
             }
 
-            if (tokens[i.Value] != "then")
+            if (i.Value >= tokens.Length || tokens[i.Value] != "then") {
+                i.Value = start;
                 throw new ForthException("UNTERMINATED ELSE");
+            }
 
             if (stack.Pop().ToForthBool())
                 interpreter.Interpret([.. ifTokens], ctx.loopIndex);
@@ -258,6 +273,7 @@ public static class Stdlib
         {"do", new((ctx, _, interpreter, stack) => {
             var i = ctx.i;
             var tokens = ctx.tokens;
+            var start = i.Value;
             i.Value++;
 
             List<string> loopTokens = [];
@@ -273,8 +289,10 @@ public static class Stdlib
                 loopTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
-            if (tokens[i.Value] != "loop")
+            if (i.Value >= tokens.Length || tokens[i.Value] != "loop") {
+                i.Value = start;
                 throw new ForthException("UNTERMINATED LOOP");
+            }
 
             var loops = stack.Pop();
             for (int j = 0; j < loops; j++) interpreter.Interpret([.. loopTokens], j);
@@ -291,6 +309,7 @@ public static class Stdlib
         {".\"", new((ctx, words, _, _) => {
             var i = ctx.i;
             var tokens = ctx.tokens;
+            var start = i.Value;
             i.Value++;
 
             List<string> stringTokens = [];
@@ -298,8 +317,10 @@ public static class Stdlib
                 stringTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
-            if (tokens[i.Value] != "\"")
+            if (i.Value >= tokens.Length || tokens[i.Value] != "\"") {
+                i.Value = start;
                 throw new ForthException("UNTERMINATED STRING");
+            }
 
             string output = "";
             foreach (string token in stringTokens) output += " " + token;
