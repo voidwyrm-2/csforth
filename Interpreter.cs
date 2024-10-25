@@ -3,11 +3,12 @@ using static Common;
 
 class ForthException(string message) : Exception(message) { }
 
-public readonly struct Context(Ref<int> i, string[] tokens, int? loopIndex)
+public readonly struct Context(Ref<int> i, string[] tokens, int? loopIndex, Dictionary<string, int> variables)
 {
     public readonly Ref<int> i = i;
     public readonly string[] tokens = tokens;
     public readonly int? loopIndex = loopIndex;
+    public readonly Dictionary<string, int> variables = variables;
 }
 
 public readonly struct Word
@@ -83,6 +84,8 @@ public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? wor
         //foreach (var (k, v) in words) Console.WriteLine(k, v);
         //foreach (var token in tokens) Console.WriteLine(token + "\n");
 
+        Dictionary<string, int> variables = [];
+
         for (int i = 0; i < tokens.Length; i++)
         {
             if (tokens[i].TryOutInt(out int integer))
@@ -94,11 +97,11 @@ public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? wor
                     var r = new Ref<int>(i);
                     try
                     {
-                        word.builtin(new(r, tokens, loopIndex), words, this, stack);
+                        word.builtin(new(r, tokens, loopIndex, variables), words, this, stack);
                     }
                     catch (ForthException e)
                     {
-                        throw new ForthException($"{e.Message}\n>>>{tokens[r.Value >= tokens.Length ? tokens.Length - 1 : r.Value]}<<<");
+                        throw new ForthException($"{e.Message}\n{tokens.GetSurroundingContext(r)}");
                     }
                     if (r.Set) i = r.Value == -1 ? tokens.Length : r.Value;
                 }
@@ -106,7 +109,7 @@ public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? wor
                     Interpret(word.words, loopIndex);
             }
             else
-                throw new ForthException($"UNKNOWN WORD\n>>>{tokens[i]}<<<");
+                throw new ForthException($"UNKNOWN WORD\n{tokens.GetSurroundingContext(i)}");
         }
     }
 
@@ -196,7 +199,7 @@ public static class Stdlib
                 }
 
                 if (i.Value >= tokens.Length || fnTokens[j] != ")") {
-                    i.Value = start;
+                    i.Value = start + 2;
                     throw new ForthException("UNTERMINATED COMMENT");
                 }
                 fnTokens = fnTokens[(j + 1)..];
@@ -206,13 +209,75 @@ public static class Stdlib
                 effect = effect.Trim();
             }
 
-            if (words.ContainsKey(name))
+            if (words.ContainsKey(name)) {
+                i.Value = start + 1;
                 throw new ForthException($"WORD '{name}' ALREADY EXISTS");
+            }
 
-            words.Add(name, new([.. fnTokens], effect));
+            words[name] = new([.. fnTokens], effect);
 
             return null;
         }, ForthStack.IOTypes.Nop)},
+
+        {"variable", new((ctx, words, _, stack) => {
+            var i = ctx.i;
+            var tokens = ctx.tokens;
+            if (i.Value >= tokens.Length) throw new ForthException("MISSING IDENTIFIER FOR VARIABLE");
+
+            i.Value++;
+            string name = tokens[i.Value];
+
+            if (words.ContainsKey(name))
+                throw new ForthException($"CANNOT ASSIGN VARIABLE '{name}' TO EXISTING WORD");
+            else if (ctx.variables.ContainsKey(name))
+                throw new ForthException($"CANNOT ASSIGN VARIABLE '{name}' TO EXISTING VARIABLE");
+
+            i.Value--;
+            ctx.variables[name] = stack.Pop();
+            i.Value++;
+
+            return null;
+        }, ForthStack.IOTypes.InputOnly)},
+
+        {"@", new((ctx, words, _, stack) => {
+            var i = ctx.i;
+            var tokens = ctx.tokens;
+            if (i.Value >= tokens.Length) throw new ForthException("MISSING IDENTIFIER FOR VARIABLE");
+
+            i.Value++;
+            string name = tokens[i.Value];
+
+            if (words.ContainsKey(name))
+                throw new ForthException($"CANNOT GET VALUE OF WORD '{name}'");
+            else if (!ctx.variables.ContainsKey(name))
+                throw new ForthException($"CANNOT GET NONEXISTANT VARIABLE '{name}'");
+
+            i.Value--;
+            stack.Push(ctx.variables[name]);
+            i.Value++;
+
+            return null;
+        }, ForthStack.IOTypes.OutputOnly)},
+
+        {"$", new((ctx, words, _, stack) => {
+            var i = ctx.i;
+            var tokens = ctx.tokens;
+            if (i.Value >= tokens.Length) throw new ForthException("MISSING IDENTIFIER FOR VARIABLE");
+
+            i.Value++;
+            string name = tokens[i.Value];
+
+            if (words.ContainsKey(name))
+                throw new ForthException($"CANNOT SET VALUE OF WORD '{name}'");
+            else if (!ctx.variables.ContainsKey(name))
+                throw new ForthException($"CANNOT SET NONEXISTANT VARIABLE '{name}'");
+
+            i.Value--;
+            ctx.variables[name] = stack.Pop();
+            i.Value++;
+
+            return null;
+        }, ForthStack.IOTypes.OutputOnly)},
 
         {"if", new((ctx, _, interpreter, stack) => {
             var i = ctx.i;
