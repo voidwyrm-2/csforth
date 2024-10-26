@@ -3,7 +3,7 @@
 namespace CSForth;
 class Program
 {
-    private const string CSForthVersion = "1.0.0";
+    private const string CSForthVersion = "2.0";
 
     static void Main(string[] args)
     {

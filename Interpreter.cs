@@ -3,12 +3,13 @@ using static Common;
 
 class ForthException(string message) : Exception(message) { }
 
-public readonly struct Context(Ref<int> i, string[] tokens, int? loopIndex, Dictionary<string, int> variables)
+public readonly struct Context(Ref<int> i, string[] tokens, int? loopIndex, Dictionary<string, int> variables, ForthMemory memory)
 {
     public readonly Ref<int> i = i;
     public readonly string[] tokens = tokens;
     public readonly int? loopIndex = loopIndex;
     public readonly Dictionary<string, int> variables = variables;
+    public readonly ForthMemory memory = memory;
 }
 
 public readonly struct Word
@@ -65,18 +66,44 @@ public class ForthStack : Stack<int>
     public bool Empty() => Count == 0;
 }
 
-public class ForthDictionary : Dictionary<string, Word>
+public class ForthMemory(uint size)
 {
+    private readonly int[] bytes = new int[size];
 
+    public uint Size { get => (uint)bytes.Length; }
+
+    private void CheckIndex(int i)
+    {
+        if (i < 0 || i >= bytes.Length) throw new ForthException($"INVALID MEMORY POSITION {i}");
+    }
+
+    public int Get(int i)
+    {
+        CheckIndex(i);
+        return bytes[i];
+    }
+
+    public void Set(int i, byte b)
+    {
+        CheckIndex(i);
+        bytes[i] = b;
+    }
 }
 
-public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? words = null)
+public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? words = null, uint memorySize = 128)
 {
     private readonly ForthStack stack = stack ?? [];
 
     private readonly Dictionary<string, Word> words = words ?? Stdlib.words;
 
-    //private readonly Dictionary<string, byte[]> memory = [];
+    private readonly ForthMemory memory = new(memorySize);
+
+    internal bool MMode { get => memory.Size == 0; }
+
+    internal void CheckMMode()
+    {
+        if (!MMode) throw new ForthException("NOT IN MEMORY MODE");
+    }
 
     public void Interpret(string[] tokens, int? loopIndex = null)
     {
@@ -97,7 +124,7 @@ public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? wor
                     var r = new Ref<int>(i);
                     try
                     {
-                        word.builtin(new(r, tokens, loopIndex, variables), words, this, stack);
+                        word.builtin(new(r, tokens, loopIndex, variables, memory), words, this, stack);
                     }
                     catch (ForthException e)
                     {
@@ -134,7 +161,8 @@ public static class Stdlib
 {
     public static readonly Dictionary<string, Word> words = new(){
         {"emit", new((_, _, _, stack) => {
-            Console.Write((char)stack.Pop());
+            var ch = stack.Pop();
+            Console.Write(ch < 0 ? (char)0 : ch > 255 ? (char)255 : (char)ch);
             return null;
         }, ForthStack.IOTypes.InputOnly)},
 
@@ -142,11 +170,6 @@ public static class Stdlib
             Console.Write(stack.Pop());
             return null;
         }, ForthStack.IOTypes.InputOnly)},
-
-        {"dup", new((_, _, _, stack) => {
-            stack.Dup();
-            return null;
-        }, "n -- n n")},
 
         {"drop", new((_, _, _, stack) => {
             stack.Drop();
@@ -394,13 +417,6 @@ public static class Stdlib
             return null;
         }, ForthStack.IOTypes.Nop)},
 
-        {"empty", new((_, _, _, stack) => {
-            stack.Push(stack.Empty().ToForthInt());
-            return null;
-        }, ForthStack.IOTypes.OutputOnly)},
-
-        {"invert", new(["0", "=", "if", "-1", "else", "0", "then"], "n -- !n")},
-
         {"+", new((_, _, _, stack) => {
             int n = stack.Pop();
             stack.Push(stack.Pop() + n);
@@ -513,6 +529,30 @@ public static class Stdlib
             return null;
         })},
 
+        {"slen", new((_, _, _, stack) => {
+            stack.Push(stack.Count);
+            return null;
+        }, ForthStack.IOTypes.OutputOnly)},
+
+        {"gptr", new((ctx, _, interpreter, stack) => {
+            interpreter.CheckMMode();
+            var memory = ctx.memory;
+
+            return null;
+        })},
+
+        {"sptr", new((ctx, _, interpreter, stack) => {
+            interpreter.CheckMMode();
+            var memory = ctx.memory;
+            return null;
+        })},
+
+        {"empty?", new(["slen", "0="], ForthStack.IOTypes.OutputOnly)},
+
+        {"dup", new(["variable", "a", "@", "a", "@", "a"], "n -- n n")},
+
+        {"!", new(["0", "=", "if", "-1", "else", "0", "then"], "n -- !n")},
+
         {"cr", new(["10", "emit"])},
 
         {"nop", new([])},
@@ -523,7 +563,9 @@ public static class Stdlib
 
         {"dump", new(["empty", "if", "else", ".", "cr", "dump", "then"], "n... --")},
 
-        {"0=", new(["0", "="], "n -- n == 0")}
+        {"0=", new(["0", "="], "n -- n == 0")},
+
+        {"peek", new(["dup", "."], ForthStack.IOTypes.InputOnly)}
 
         //{"bell", new(["7", "emit"])},
     };
