@@ -62,6 +62,6 @@ public static class Common
                 set = true;
             }
         }
-        public bool Set { get => set; }
+        public bool Set => set;
     }
 }

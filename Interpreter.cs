@@ -1,4 +1,5 @@
 namespace CSForth;
+
 using static Common;
 
 class ForthException(string message) : Exception(message) { }
@@ -46,11 +47,13 @@ public class ForthStack : Stack<int>
     public const int True = -1;
     public const int False = 0;
 
+    public bool Empty => Count == 0;
+
     public new void Push(int i) => base.Push(i);
 
     public new int Pop()
     {
-        if (Empty()) throw new ForthException("STACK UNDERFLOW");
+        if (Empty) throw new ForthException("STACK UNDERFLOW");
         return base.Pop();
     }
 
@@ -62,15 +65,13 @@ public class ForthStack : Stack<int>
     }
 
     public void Drop() => Pop();
-
-    public bool Empty() => Count == 0;
 }
 
 public class ForthMemory(uint size)
 {
     private readonly int[] bytes = new int[size];
 
-    public uint Size { get => (uint)bytes.Length; }
+    public uint Size => (uint)bytes.Length;
 
     private void CheckIndex(int i)
     {
@@ -92,26 +93,26 @@ public class ForthMemory(uint size)
 
 public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? words = null, uint memorySize = 128)
 {
-    private readonly ForthStack stack = stack ?? [];
+    public readonly ForthStack stack = stack ?? [];
 
-    private readonly Dictionary<string, Word> words = words ?? Stdlib.words;
+    public readonly Dictionary<string, Word> words = words ?? Stdlib.words;
 
-    private readonly ForthMemory memory = new(memorySize);
+    public readonly ForthMemory memory = new(memorySize);
 
-    internal bool MMode { get => memory.Size == 0; }
+    public bool MMode => memory.Size == 0;
 
     internal void CheckMMode()
     {
         if (!MMode) throw new ForthException("NOT IN MEMORY MODE");
     }
 
-    public void Interpret(string[] tokens, int? loopIndex = null)
+    public void Interpret(string[] tokens, Dictionary<string, int>? injectedVariables = null, int? loopIndex = null)
     {
         //Console.WriteLine(words.Count);
         //foreach (var (k, v) in words) Console.WriteLine(k, v);
         //foreach (var token in tokens) Console.WriteLine(token + "\n");
 
-        Dictionary<string, int> variables = [];
+        Dictionary<string, int> variables = injectedVariables ?? [];
 
         for (int i = 0; i < tokens.Length; i++)
         {
@@ -133,7 +134,7 @@ public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? wor
                     if (r.Set) i = r.Value == -1 ? tokens.Length : r.Value;
                 }
                 else
-                    Interpret(word.words, loopIndex);
+                    Interpret(word.words, loopIndex: loopIndex);
             }
             else
                 throw new ForthException($"UNKNOWN WORD\n{tokens.GetSurroundingContext(i)}");
@@ -147,14 +148,15 @@ public class Interpreter(ForthStack? stack = null, Dictionary<string, Word>? wor
         {
             List<string> tokensClean = [];
             foreach (var token in tokens)
-            {
                 if (token != "") tokensClean.Add(token);
-            }
+
             Interpret([.. tokensClean]);
         }
         else
             Interpret(tokens);
     }
+
+    public Interpreter Copy(ForthStack? stack = null, Dictionary<string, Word>? words = null, uint? memorySize = null) => new(stack ?? this.stack, words ?? this.words, memorySize ?? memory.Size);
 }
 
 public static class Stdlib
@@ -166,7 +168,7 @@ public static class Stdlib
             return null;
         }, ForthStack.IOTypes.InputOnly)},
 
-        { ".", new Word((_, _, _, stack) => {
+        {".", new Word((_, _, _, stack) => {
             Console.Write(stack.Pop());
             return null;
         }, ForthStack.IOTypes.InputOnly)},
@@ -182,7 +184,8 @@ public static class Stdlib
             var start = i.Value;
             while (i.Value < tokens.Length && tokens[i.Value] != ")") i.Value++;
 
-            if (tokens[i.Value] != ")") {
+            if (tokens[i.Value] != ")")
+            {
                 i.Value = start;
                 throw new ForthException("UNTERMINATED COMMENT");
             }
@@ -202,7 +205,8 @@ public static class Stdlib
                 fnTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
-            if (tokens[i.Value] != ";") {
+            if (tokens[i.Value] != ";")
+            {
                 i.Value = start;
                 throw new ForthException("UNTERMINATED WORD DECLARATION");
             }
@@ -213,26 +217,31 @@ public static class Stdlib
             string effect = "";
             fnTokens = fnTokens[1..];
 
-            if (fnTokens.Count > 0 && fnTokens[0] == "(") {
+            if (fnTokens.Count > 0 && fnTokens[0] == "(")
+            {
                 List<string> effectTokens = [];
                 int j = 1;
-                while (j < fnTokens.Count && fnTokens[j] != ")") {
+                while (j < fnTokens.Count && fnTokens[j] != ")")
+                {
                     effectTokens.Add(fnTokens[j]);
                     j++;
                 }
 
-                if (i.Value >= tokens.Length || fnTokens[j] != ")") {
+                if (i.Value >= tokens.Length || fnTokens[j] != ")")
+                {
                     i.Value = start + 2;
                     throw new ForthException("UNTERMINATED COMMENT");
                 }
                 fnTokens = fnTokens[(j + 1)..];
-                foreach (string token in effectTokens) {
+                foreach (string token in effectTokens)
+                {
                     effect += " " + token;
                 }
                 effect = effect.Trim();
             }
 
-            if (words.ContainsKey(name)) {
+            if (words.ContainsKey(name))
+            {
                 i.Value = start + 1;
                 throw new ForthException($"WORD '{name}' ALREADY EXISTS");
             }
@@ -310,8 +319,10 @@ public static class Stdlib
 
             List<string> ifTokens = [];
             int ifnest = 0;
-            while (i.Value < tokens.Length) {
-                if (tokens[i.Value] == "else") {
+            while (i.Value < tokens.Length)
+            {
+                if (tokens[i.Value] == "else")
+                {
                     if (ifnest == 0) break;
                     ifnest--;
                 }
@@ -323,7 +334,8 @@ public static class Stdlib
                 i.Value++;
             }
 
-            if (i.Value >= tokens.Length || tokens[i.Value] != "else") {
+            if (i.Value >= tokens.Length || tokens[i.Value] != "else")
+            {
                 i.Value = start;
                 throw new ForthException("UNTERMINATED IF");
             }
@@ -332,8 +344,10 @@ public static class Stdlib
 
             List<string> elseTokens = [];
             int elsenest = 0;
-            while (i.Value < tokens.Length) {
-                if (tokens[i.Value] == "then") {
+            while (i.Value < tokens.Length)
+            {
+                if (tokens[i.Value] == "then")
+                {
                     if (elsenest == 0) break;
                     elsenest--;
                 }
@@ -345,15 +359,16 @@ public static class Stdlib
                 i.Value++;
             }
 
-            if (i.Value >= tokens.Length || tokens[i.Value] != "then") {
+            if (i.Value >= tokens.Length || tokens[i.Value] != "then")
+            {
                 i.Value = start;
                 throw new ForthException("UNTERMINATED ELSE");
             }
 
             if (stack.Pop().ToForthBool())
-                interpreter.Interpret([.. ifTokens], ctx.loopIndex);
+                interpreter.Interpret([.. ifTokens], loopIndex: ctx.loopIndex);
             else
-                interpreter.Interpret([.. elseTokens], ctx.loopIndex);
+                interpreter.Interpret([.. elseTokens],loopIndex: ctx.loopIndex);
 
             return null;
         }, ForthStack.IOTypes.InputOnly)},
@@ -366,24 +381,28 @@ public static class Stdlib
 
             List<string> loopTokens = [];
             int loopnest = 0;
-            while (i.Value < tokens.Length) {
-                if (tokens[i.Value] == "loop") {
+            while (i.Value < tokens.Length)
+            {
+                if (tokens[i.Value] == "loop")
+                {
                     if (loopnest == 0) break;
                     loopnest--;
                 }
                 if (tokens[i.Value] == ":")
                     throw new ForthException(": INSIDE do ... loop");
-                else if (tokens[i.Value] == "do") loopnest++;
+                else if (tokens[i.Value] == "do")
+                    loopnest++;
                 loopTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
-            if (i.Value >= tokens.Length || tokens[i.Value] != "loop") {
+            if (i.Value >= tokens.Length || tokens[i.Value] != "loop")
+            {
                 i.Value = start;
                 throw new ForthException("UNTERMINATED LOOP");
             }
 
             var loops = stack.Pop();
-            for (int j = 0; j < loops; j++) interpreter.Interpret([.. loopTokens], j);
+            for (int j = 0; j < loops; j++) interpreter.Interpret([.. loopTokens], loopIndex: j);
 
             return null;
         }, ForthStack.IOTypes.InputOnly)},
@@ -401,11 +420,13 @@ public static class Stdlib
             i.Value++;
 
             List<string> stringTokens = [];
-            while (i.Value < tokens.Length && tokens[i.Value] != "\"") {
+            while (i.Value < tokens.Length && tokens[i.Value] != "\"")
+            {
                 stringTokens.Add(tokens[i.Value]);
                 i.Value++;
             }
-            if (i.Value >= tokens.Length || tokens[i.Value] != "\"") {
+            if (i.Value >= tokens.Length || tokens[i.Value] != "\"")
+            {
                 i.Value = start;
                 throw new ForthException("UNTERMINATED STRING");
             }
@@ -482,15 +503,19 @@ public static class Stdlib
             while (true) {
                 string input;
                 input = Console.ReadLine() ?? "";
-                if (input == "") {
+                if (input == "")
+                {
                     Console.WriteLine("INPUT EMPTY");
                     continue;
                 }
 
                 int result;
-                try {
+                try
+                {
                     result = Convert.ToInt32(input[0]);
-                } catch (FormatException) {
+                }
+                catch (FormatException)
+                {
                     Console.WriteLine("NOT A NUMBER");
                     continue;
                 }
@@ -502,18 +527,23 @@ public static class Stdlib
         })},
 
         {"inputn", new((_, _, _, stack) => {
-            while (true) {
+            while (true)
+            {
                 string input;
                 input = Console.ReadLine() ?? "";
-                if (input == "") {
+                if (input == "")
+                {
                     Console.WriteLine("INPUT EMPTY");
                     continue;
                 }
 
                 int result;
-                try {
+                try
+                {
                     result = Convert.ToInt32(input);
-                } catch (FormatException) {
+                }
+                catch (FormatException)
+                {
                     Console.WriteLine("NOT A NUMBER");
                     continue;
                 }
@@ -534,16 +564,17 @@ public static class Stdlib
             return null;
         }, ForthStack.IOTypes.OutputOnly)},
 
-        {"gptr", new((ctx, _, interpreter, stack) => {
+        {"&", new((ctx, _, interpreter, stack) => {
             interpreter.CheckMMode();
             var memory = ctx.memory;
 
             return null;
         })},
 
-        {"sptr", new((ctx, _, interpreter, stack) => {
+        {"&=", new((ctx, _, interpreter, stack) => {
             interpreter.CheckMMode();
             var memory = ctx.memory;
+
             return null;
         })},
 
@@ -554,6 +585,8 @@ public static class Stdlib
         {"!", new(["0", "=", "if", "-1", "else", "0", "then"], "n -- !n")},
 
         {"cr", new(["10", "emit"])},
+
+        {"bell", new(["7", "emit"])},
 
         {"nop", new([])},
 
@@ -566,7 +599,5 @@ public static class Stdlib
         {"0=", new(["0", "="], "n -- n == 0")},
 
         {"peek", new(["dup", "."], ForthStack.IOTypes.InputOnly)}
-
-        //{"bell", new(["7", "emit"])},
     };
 }
