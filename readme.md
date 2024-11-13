@@ -5,3 +5,4 @@ CSFORTH is a version of the [FORTH language](https://en.wikipedia.org/wiki/Forth
 - [x] Declaring words with `:` and `;`
 - [x] Conditionals with `if`, `else`, and `then`
 - [x] Declaring variables with `variable`
+- [x] Accessing simulated memory with `&` and `&=`
